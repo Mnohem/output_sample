@@ -1,7 +1,0 @@
-default: output
-build_dir: /home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build
-domains:
-  - name: output
-    build_dir: /home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/output
-flash_order:
-  - output
