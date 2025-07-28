@@ -1,0 +1,2 @@
+osource "/home/mnohem/ncs/nrfaudio/boards/shields/*/Kconfig.shield"
+osource "/home/mnohem/ncs/nrf/boards/shields/*/Kconfig.shield"

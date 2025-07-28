@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/CMakeFiles/output"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/CMakeFiles/output.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/CMakeFiles/output-complete.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/output-prefix/src/output-stamp/output-build.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/output-prefix/src/output-stamp/output-configure.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/output-prefix/src/output-stamp/output-download.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/output-prefix/src/output-stamp/output-install.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/output-prefix/src/output-stamp/output-mkdir.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/output-prefix/src/output-stamp/output-patch.rule"
+		},
+		{
+			"file" : "/home/mnohem/ncs/zephyr/samples/drivers/i2s/output/build/_sysbuild/sysbuild/images/output-prefix/src/output-stamp/output-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"output"
+		],
+		"name" : "output"
+	}
+}

@@ -1,0 +1,2 @@
+"nrf":"/home/mnohem/ncs/nrf":"/home/mnohem/ncs/nrf/sysbuild"
+"mcuboot":"/home/mnohem/ncs/bootloader/mcuboot":"/home/mnohem/ncs/bootloader/mcuboot/boot/zephyr/sysbuild"
