@@ -16,6 +16,9 @@
 #include "block.h"
 #include "sdhc.h"
 
+int read_sdhc_writei2s(struct fs_file_t *file, const struct device *dev_i2s, struct k_mem_slab *tx_mem_slab);
+
+
 LOG_MODULE_REGISTER(main);
 
 int main(void)
@@ -59,20 +62,18 @@ int main(void)
     LOG_INF("WAV format: %d Hz, %d-bit, %d channels, format code %d",
         sample_rate, bits_per_sample, num_channels, audio_format);
 
-	void *tx_block[NUM_BLOCKS];
 	struct i2s_config i2s_cfg;
-	uint32_t tx_idx;
 	const struct device *dev_i2s = DEVICE_DT_GET(DT_NODELABEL(i2s_tx));
 
 	if (!device_is_ready(dev_i2s)) {
 		printf("I2S device not ready\n");
 		return -ENODEV;
 	}
+
 	/* Configure I2S stream */
-	// i2s_cfg.word_size = 16U;
 	i2s_cfg.word_size = bits_per_sample;
 	i2s_cfg.channels = num_channels;
-	i2s_cfg.format = I2S_FMT_DATA_FORMAT_I2S | I2S_FMT_DATA_ORDER_MSB;
+	i2s_cfg.format = I2S_FMT_DATA_FORMAT_I2S;
 	i2s_cfg.frame_clk_freq = sample_rate;
 	i2s_cfg.block_size = BLOCK_SIZE;
 	i2s_cfg.timeout = 2000;
@@ -85,61 +86,64 @@ int main(void)
 		return ret;
 	}
 
-	// Start reading PCM data
-    uint8_t buffer[BLOCK_SIZE];
-    do {
-		/* Prepare all TX blocks */
-		for (tx_idx = 0; tx_idx < NUM_BLOCKS; tx_idx++) {
-			read_bytes = fs_read(&wavfile, buffer, sizeof(buffer));
-			if (read_bytes == 0) {
-				break;
-			} else if (read_bytes < 0) {
-				LOG_ERR("Reading block from SD ran into an error");
-			}
+	/* Trigger the I2S transmission */
+	ret = i2s_trigger(dev_i2s, I2S_DIR_TX, I2S_TRIGGER_START);
+	if (ret < 0) {
+		printf("Could not trigger I2S tx\n");
+		return ret;
+	}
 
-			ret = k_mem_slab_alloc(&tx_0_mem_slab, &tx_block[tx_idx], K_FOREVER);
-			if (ret < 0) {
-				printf("Failed to allocate TX block\n");
-				return ret;
-			}
-
-			memcpy(tx_block[tx_idx], &buffer, read_bytes);
-		}
-
-		tx_idx = 0;
-		/* Send first block */
-		while ((ret = i2s_write(dev_i2s, tx_block[tx_idx++], BLOCK_SIZE)) == -EIO);
-		if (ret < 0) {
-			printf("Could not write TX buffer %d\n", tx_idx);
-			return ret;
-		}
-
-		/* Trigger the I2S transmission */
-		ret = i2s_trigger(dev_i2s, I2S_DIR_TX, I2S_TRIGGER_START);
-		if (ret < 0) {
-			printf("Could not trigger I2S tx\n");
-			return ret;
-		}
-		
-		for (; tx_idx < NUM_BLOCKS;) {
-			ret = i2s_write(dev_i2s, tx_block[tx_idx++], BLOCK_SIZE);
-			if (ret < 0) {
-				printf("Could not write TX buffer %d\n", tx_idx);
-				return ret;
-			}
-		}
-		/* Drain TX queue */
+	while ((ret = read_sdhc_writei2s(&wavfile, dev_i2s, &tx_0_mem_slab)) > 0) {
 		ret = i2s_trigger(dev_i2s, I2S_DIR_TX, I2S_TRIGGER_DRAIN);
 		if (ret < 0) {
 			printf("Could not trigger I2S tx\n");
 			return ret;
 		}
-
-		LOG_INF("One loop read");
-    } while ((read_bytes = fs_read(&wavfile, buffer, sizeof(buffer))) > 0);
+	}
+	if (ret < 0) {
+		return 1;
+	}
 
 	printf("All I2S blocks written\n");
 	deinit_sdhc();
 
 	return 0;
 }
+
+int read_sdhc_writei2s(struct fs_file_t *file, const struct device *dev_i2s, struct k_mem_slab *tx_mem_slab) {
+	int ret;
+
+	void *tx_block[NUM_BLOCKS/2];
+	int read_bytes = 0;
+	for (int tx_idx = 0; tx_idx < NUM_BLOCKS/2; tx_idx++) {
+		ret = k_mem_slab_alloc(tx_mem_slab, &tx_block[tx_idx], K_FOREVER);
+		if (ret < 0) {
+			printf("Failed to allocate TX block\n");
+			return ret;
+		}
+
+		int cur_read_bytes;
+		cur_read_bytes = fs_read(file, tx_block[tx_idx], BLOCK_SIZE);
+		if (cur_read_bytes == 0) {
+			LOG_INF("Reached end of file\n");
+			while ((ret = i2s_write(dev_i2s, tx_block[tx_idx], BLOCK_SIZE)) == -EIO);
+			if (ret < 0) {
+				LOG_ERR("Could not write TX buffer\n");
+				return ret;
+			}
+			break;
+		} else if (cur_read_bytes < 0) {
+			LOG_ERR("Reading block from SD ran into an error\n");
+			return cur_read_bytes;
+		}
+		read_bytes += cur_read_bytes;
+
+		while ((ret = i2s_write(dev_i2s, tx_block[tx_idx], BLOCK_SIZE)) == -EIO);
+		if (ret < 0) {
+			LOG_ERR("Could not write TX buffer\n");
+			return ret;
+		}
+	}
+	return read_bytes;
+} 
+

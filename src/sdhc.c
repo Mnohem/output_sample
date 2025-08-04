@@ -25,7 +25,7 @@ struct fs_mount_t mp = {
 
 int init_sdhc()
 {
-	printk("Initializing SDHC Card");
+ 	printk("Initializing SDHC Card");
 	/* raw disk i/o */
 
 	static const char *disk_pdrv = DISK_DRIVE_NAME;
