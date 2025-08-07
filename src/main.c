@@ -12,12 +12,8 @@
 #include <string.h>
 #include <zephyr/logging/log.h>
 
-
 #include "block.h"
 #include "sdhc.h"
-
-int read_sdhc_writei2s(struct fs_file_t *file, const struct device *dev_i2s, struct k_mem_slab *tx_mem_slab);
-
 
 LOG_MODULE_REGISTER(main);
 
@@ -25,6 +21,8 @@ int main(void)
 {
 	if (init_sdhc() != 0)
 		return -1;
+	
+	printk("Inited SDHC");
 
 	struct fs_file_t wavfile;
 	fs_file_t_init(&wavfile);
@@ -58,9 +56,10 @@ int main(void)
     uint16_t num_channels = header[22] | (header[23] << 8);
     uint32_t sample_rate  = header[24] | (header[25] << 8) | (header[26] << 16) | (header[27] << 24);
     uint16_t bits_per_sample = header[34] | (header[35] << 8);
+	uint16_t frame_size = num_channels * (bits_per_sample / 8);
 
-    LOG_INF("WAV format: %d Hz, %d-bit, %d channels, format code %d",
-        sample_rate, bits_per_sample, num_channels, audio_format);
+    LOG_INF("WAV format: %d Hz, %d-bit, %d channels, format code %d, frame_size %d",
+        sample_rate, bits_per_sample, num_channels, audio_format, frame_size);
 
 	struct i2s_config i2s_cfg;
 	const struct device *dev_i2s = DEVICE_DT_GET(DT_NODELABEL(i2s_tx));
@@ -85,6 +84,40 @@ int main(void)
 		printf("Failed to configure I2S stream\n");
 		return ret;
 	}
+	printk("i2s READY\n");
+	uint8_t *buffer;
+	for (int i = 0; i < NUM_BLOCKS; i++) {
+		ret = k_mem_slab_alloc(&tx_0_mem_slab,(void **)&buffer, K_FOREVER);
+		if (ret < 0) {
+			printf("Failed to allocate TX block\n");
+			return ret;
+		}
+
+		ret = fs_read(&wavfile, buffer, BLOCK_SIZE);
+
+		/* Send first block */
+		ret = i2s_write(dev_i2s, buffer, BLOCK_SIZE);
+		switch (ret) {
+			case -EIO:
+				printf("Could not write TX buffer -EIO\n");
+				return ret;
+			case -EBUSY:
+				printf("Could not write TX buffer -EBUSY\n");
+				return ret;
+			case -EAGAIN:
+				printf("Could not write TX buffer -EAGAIN\n");
+				goto i2s_start;
+			case -ENOMEM:
+				printf("Could not write TX buffer -ENOMEM\n");
+				return;
+			case -EINVAL:
+				printf("Could not write TX buffer -EINVAL\n");
+				return;
+		}
+		printk("Preallocated block\n");
+	}
+i2s_start:
+	printk("Sent first block\n");
 
 	/* Trigger the I2S transmission */
 	ret = i2s_trigger(dev_i2s, I2S_DIR_TX, I2S_TRIGGER_START);
@@ -92,58 +125,47 @@ int main(void)
 		printf("Could not trigger I2S tx\n");
 		return ret;
 	}
-
-	while ((ret = read_sdhc_writei2s(&wavfile, dev_i2s, &tx_0_mem_slab)) > 0) {
-		ret = i2s_trigger(dev_i2s, I2S_DIR_TX, I2S_TRIGGER_DRAIN);
+	printk("i2s RUNNING\n");
+	ssize_t bytes_read;
+	while (1) {
+		ret = k_mem_slab_alloc(&tx_0_mem_slab, (void **)&buffer, K_FOREVER);
 		if (ret < 0) {
-			printf("Could not trigger I2S tx\n");
+			LOG_ERR("Failed to allocate TX block");
 			return ret;
 		}
+
+		bytes_read = fs_read(&wavfile, buffer, BLOCK_SIZE);
+		if (bytes_read <= 0) {
+			k_mem_slab_free(&tx_0_mem_slab, (void **)&buffer);  // optional: free unused block
+			break;
+		}
+
+		// Optional zero-padding
+		if (bytes_read < BLOCK_SIZE) {
+			memset(buffer + bytes_read, 0, BLOCK_SIZE - bytes_read);
+		}
+
+		while ((ret = i2s_write(dev_i2s, buffer, BLOCK_SIZE)) == -EAGAIN || ret == -EBUSY) {
+			k_sleep(K_MSEC(1));
+		}
+		if (ret < 0) {
+			LOG_ERR("i2s_write failed: %d", ret);
+			i2s_trigger(dev_i2s, I2S_DIR_TX, I2S_TRIGGER_PREPARE);
+			return ret;
+		} else if (ret == 0) {
+			printk("Wrote block bytes_read %d \n", bytes_read);
+		}
 	}
+	/* Drain TX queue */
+	ret = i2s_trigger(dev_i2s, I2S_DIR_TX, I2S_TRIGGER_DRAIN);
 	if (ret < 0) {
-		return 1;
+		printf("Could not trigger I2S tx\n");
+		return ret;
 	}
 
 	printf("All I2S blocks written\n");
+	fs_close(&wavfile);
 	deinit_sdhc();
 
 	return 0;
 }
-
-int read_sdhc_writei2s(struct fs_file_t *file, const struct device *dev_i2s, struct k_mem_slab *tx_mem_slab) {
-	int ret;
-
-	void *tx_block[NUM_BLOCKS/2];
-	int read_bytes = 0;
-	for (int tx_idx = 0; tx_idx < NUM_BLOCKS/2; tx_idx++) {
-		ret = k_mem_slab_alloc(tx_mem_slab, &tx_block[tx_idx], K_FOREVER);
-		if (ret < 0) {
-			printf("Failed to allocate TX block\n");
-			return ret;
-		}
-
-		int cur_read_bytes;
-		cur_read_bytes = fs_read(file, tx_block[tx_idx], BLOCK_SIZE);
-		if (cur_read_bytes == 0) {
-			LOG_INF("Reached end of file\n");
-			while ((ret = i2s_write(dev_i2s, tx_block[tx_idx], BLOCK_SIZE)) == -EIO);
-			if (ret < 0) {
-				LOG_ERR("Could not write TX buffer\n");
-				return ret;
-			}
-			break;
-		} else if (cur_read_bytes < 0) {
-			LOG_ERR("Reading block from SD ran into an error\n");
-			return cur_read_bytes;
-		}
-		read_bytes += cur_read_bytes;
-
-		while ((ret = i2s_write(dev_i2s, tx_block[tx_idx], BLOCK_SIZE)) == -EIO);
-		if (ret < 0) {
-			LOG_ERR("Could not write TX buffer\n");
-			return ret;
-		}
-	}
-	return read_bytes;
-} 
-

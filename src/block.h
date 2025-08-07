@@ -3,7 +3,7 @@
 #include <zephyr/sys/iterable_sections.h>
 
 #define NUM_BLOCKS 10
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 1200
 
 #ifdef CONFIG_NOCACHE_MEMORY
 #define MEM_SLAB_CACHE_ATTR __nocache
